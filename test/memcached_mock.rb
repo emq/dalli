@@ -15,6 +15,10 @@ module MemcachedMock
     block.call server
   end
 
+  def self.tmp_socket_path
+    "#{Dir.pwd}/tmp.sock"
+  end
+
   module Helper
     # Forks the current process and starts a new mock Memcached server on
     # port 22122.
@@ -94,7 +98,7 @@ module MemcachedMock
 
 
     def memcached_low_mem_persistent(port = 19128)
-      dc = start_and_flush_with_retry(port, '-m 1 -M')
+      dc = start_and_flush_with_retry(port, '-m 1 -M', {})
       yield dc, port if block_given?
     end
 
@@ -115,7 +119,12 @@ module MemcachedMock
 
     def start_and_flush(port, args = '', client_options = {}, flush = true)
       memcached_server(port, args)
-      dc = Dalli::Client.new(["localhost:#{port}", "127.0.0.1:#{port}"], client_options)
+
+      dc = if port == :unix_socket
+        Dalli::Client.new(MemcachedMock.tmp_socket_path)
+      else
+        Dalli::Client.new(["localhost:#{port}", "127.0.0.1:#{port}"], client_options)
+      end
       dc.flush_all if flush
       dc
     end
@@ -128,9 +137,14 @@ module MemcachedMock
 
     def memcached_server(port, args='')
       Memcached.path ||= find_memcached
-      port = port.to_i
 
-      cmd = "#{Memcached.path}memcached #{args} -p #{port}"
+
+      cmd = if port == :unix_socket
+        "#{Memcached.path}memcached #{args} -s #{MemcachedMock.tmp_socket_path}"
+      else
+        port = port.to_i
+        "#{Memcached.path}memcached #{args} -p #{port}"
+      end
 
       $started[port] ||= begin
         # puts "Starting: #{cmd}... with #{env_vars.inspect}"
@@ -139,6 +153,7 @@ module MemcachedMock
           begin
             Process.kill("TERM", pid)
             Process.wait(pid)
+            File.delete(MemcachedMock.tmp_socket_path) if port == :unix_socket
           rescue Errno::ECHILD, Errno::ESRCH
           end
         end
@@ -158,6 +173,7 @@ module MemcachedMock
         begin
           Process.kill("TERM", pid)
           Process.wait(pid)
+          File.delete(MemcachedMock.tmp_socket_path) if port == :unix_socket
         rescue Errno::ECHILD, Errno::ESRCH => e
           puts e.inspect
         end

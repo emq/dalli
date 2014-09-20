@@ -3,9 +3,13 @@
 source "https://rubygems.org"
 
 gem "rake"
-gem "connection_pool"
-gem "kgio", :platform=>:mri
+gem "kgio", :platform => :mri
 gem "appraisal"
+gem "connection_pool"
 gem "rails", ">= 3", "< 4"
 
-gemspec :path=>"../"
+group :test do
+  gem "simplecov"
+end
+
+gemspec :path => "../"

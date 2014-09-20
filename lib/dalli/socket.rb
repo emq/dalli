@@ -106,3 +106,39 @@ rescue LoadError
 
   end
 end
+
+class Dalli::Server::USocket < Kgio::UNIXSocket
+  attr_accessor :options, :server
+
+  def self.open(host, server, options = {})
+    sock = start(host)
+    sock.options = options
+    sock.server = server
+    sock
+  end
+
+  def readfull(count)
+    value = ''
+    loop do
+      value << kgio_read!(count - value.bytesize)
+      break if value.bytesize == count
+    end
+    value
+  end
+
+  def read_available
+    value = ''
+    loop do
+      ret = kgio_tryread(8196)
+      case ret
+      when nil
+        raise EOFError, 'end of stream'
+      when :wait_readable
+        break
+      else
+        value << ret
+      end
+    end
+    value
+  end
+end

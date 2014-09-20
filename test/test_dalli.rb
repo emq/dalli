@@ -85,6 +85,18 @@ describe 'Dalli' do
     assert_equal s2, s3
   end
 
+
+  it "accepts unix sockets" do
+    dc = Dalli::Client.new(MemcachedMock.tmp_socket_path)
+    ring = dc.send(:ring)
+    assert ring.servers.first.unix_socket
+
+    dc = Dalli::Client.new('localhost:11211')
+    ring = dc.send(:ring)
+    assert !ring.servers.first.unix_socket
+  end
+
+
   it "accept comma separated string" do
     dc = Dalli::Client.new("server1.example.com:11211,server2.example.com:11211")
     ring = dc.send(:ring)
@@ -104,7 +116,6 @@ describe 'Dalli' do
   end
 
   describe 'using a live server' do
-
     it "support get/set" do
       memcached_persistent do |dc|
         dc.flush
@@ -621,8 +632,62 @@ describe 'Dalli' do
           assert failed, 'did not fail under low memory conditions'
         end
       end
-
     end
+  end
 
+  describe 'using unix sockets' do
+    it "pass a simple smoke test" do
+      memcached_persistent(:unix_socket) do |dc, port|
+        resp = dc.flush
+        refute_nil resp
+        assert_equal [true], resp
+
+        assert op_addset_succeeds(dc.set(:foo, 'bar'))
+        assert_equal 'bar', dc.get(:foo)
+
+        resp = dc.get('123')
+        assert_equal nil, resp
+
+        assert op_addset_succeeds(dc.set('123', 'xyz'))
+
+        resp = dc.get('123')
+        assert_equal 'xyz', resp
+
+        assert op_addset_succeeds(dc.set('123', 'abc'))
+
+        dc.prepend('123', '0')
+        dc.append('123', '0')
+
+        assert_raises Dalli::UnmarshalError do
+          resp = dc.get('123')
+        end
+
+        dc.close
+        dc = nil
+
+        dc = Dalli::Client.new(MemcachedMock.tmp_socket_path)
+
+        assert op_addset_succeeds(dc.set('456', 'xyz', 0, :raw => true))
+
+        resp = dc.prepend '456', '0'
+        assert_equal true, resp
+
+        resp = dc.append '456', '9'
+        assert_equal true, resp
+
+        resp = dc.get('456', :raw => true)
+        assert_equal '0xyz9', resp
+
+        assert op_addset_succeeds(dc.set('456', false))
+
+        resp = dc.get('456')
+        assert_equal false, resp
+
+        resp = dc.stats
+        assert_equal Hash, resp.class
+
+        dc.close
+      end
+    end
   end
 end

@@ -7,6 +7,7 @@ module Dalli
     attr_accessor :port
     attr_accessor :weight
     attr_accessor :options
+    attr_accessor :unix_socket
     attr_reader :sock
 
     DEFAULTS = {
@@ -32,11 +33,15 @@ module Dalli
     }
 
     def initialize(attribs, options = {})
-      (@hostname, @port, @weight) = parse_hostname(attribs)
-      @port ||= 11211
-      @port = Integer(@port)
-      @weight ||= 1
-      @weight = Integer(@weight)
+      if (@unix_socket = is_unix_socket?(attribs))
+        @hostname = attribs.match(/^(\/.+)$/)[1]
+      else
+        (@hostname, @port, @weight) = parse_hostname(attribs)
+        @port ||= 11211
+        @port = Integer(@port)
+        @weight ||= 1
+        @weight = Integer(@weight)
+      end
       @fail_count = 0
       @down_at = nil
       @last_down_at = nil
@@ -198,6 +203,10 @@ module Dalli
     # NOTE: Additional public methods should be overridden in Dalli::Threadsafe
 
     private
+
+    def is_unix_socket?(string)
+      !!(/^\/(.+)$/ =~ string)
+    end
 
     def verify_state
       failure!(RuntimeError.new('Already writing to socket')) if @inprogress
@@ -563,8 +572,12 @@ module Dalli
 
       begin
         @pid = Process.pid
-        @sock = KSocket.open(hostname, port, self, options)
-        sasl_authentication if need_auth?
+        if @unix_socket
+          @sock = USocket.open(hostname, self, options)
+        else
+          @sock = KSocket.open(hostname, port, self, options)
+          sasl_authentication if need_auth?
+        end
         @version = version # trigger actual connect
         up!
       rescue Dalli::DalliError # SASL auth failure
