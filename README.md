@@ -1,6 +1,49 @@
 Dalli [![Build Status](https://secure.travis-ci.org/mperham/dalli.png)](http://travis-ci.org/mperham/dalli) [![Dependency Status](https://gemnasium.com/mperham/dalli.png)](https://gemnasium.com/mperham/dalli) [![Code Climate](https://codeclimate.com/github/mperham/dalli.png)](https://codeclimate.com/github/mperham/dalli)
 =====
 
+**Fork that brings back UNIX socket support, work in progress**
+
+Benchmarks:
+
+```
+Testing 2.7.2 with ruby 2.1.2p95 (2014-05-08 revision 45877) [x86_64-linux]
+Found memcached 1.4.15 in PATH
+
+Running on: 23417
+                                            user     system      total        real
+mixed:rails:dalli                       1.710000   0.460000   2.170000 (  2.368128)
+mixed:rails-localcache:dalli            1.660000   0.360000   2.020000 (  2.223591)
+read_multi_big:rails:dalli              2.350000   0.670000   3.020000 (  3.175172)
+read_multi_big:rails-localcache:dalli   1.520000   0.300000   1.820000 (  1.933637)
+set:plain:dalli                         0.650000   0.290000   0.940000 (  1.029301)
+setq:plain:dalli                        0.300000   0.060000   0.360000 (  0.361736)
+set:ruby:dalli                          0.720000   0.300000   1.020000 (  1.146634)
+get:plain:dalli                         0.610000   0.250000   0.860000 (  0.923914)
+get:ruby:dalli                          0.690000   0.340000   1.030000 (  1.124836)
+multiget:ruby:dalli                     0.490000   0.080000   0.570000 (  0.569550)
+missing:ruby:dalli                      0.510000   0.260000   0.770000 (  0.836359)
+mixed:ruby:dalli                        1.500000   0.580000   2.080000 (  2.314442)
+mixedq:ruby:dalli                       1.270000   0.440000   1.710000 (  1.822556)
+incr:ruby:dalli                         0.220000   0.120000   0.340000 (  0.369789)
+
+Running on: unix_socket
+                                            user     system      total        real
+mixed:rails:dalli                       1.220000   0.150000   1.370000 (  1.451844)
+mixed:rails-localcache:dalli            1.270000   0.130000   1.400000 (  1.486805)
+read_multi_big:rails:dalli              1.570000   0.230000   1.800000 (  1.850436)
+read_multi_big:rails-localcache:dalli   1.050000   0.110000   1.160000 (  1.215584)
+set:plain:dalli                         0.510000   0.100000   0.610000 (  0.677125)
+setq:plain:dalli                        0.180000   0.050000   0.230000 (  0.217896)
+set:ruby:dalli                          0.510000   0.110000   0.620000 (  0.678953)
+get:plain:dalli                         0.440000   0.070000   0.510000 (  0.551678)
+get:ruby:dalli                          0.440000   0.100000   0.540000 (  0.568418)
+multiget:ruby:dalli                     0.350000   0.030000   0.380000 (  0.385434)
+missing:ruby:dalli                      0.340000   0.080000   0.420000 (  0.440780)
+mixed:ruby:dalli                        0.920000   0.270000   1.190000 (  1.286693)
+mixedq:ruby:dalli                       0.680000   0.160000   0.840000 (  0.872013)
+incr:ruby:dalli                         0.180000   0.040000   0.220000 (  0.242032)
+```
+
 Dalli is a high performance pure Ruby client for accessing memcached servers.  It works with memcached 1.4+ only as it uses the newer binary protocol.  It should be considered a replacement for the memcache-client gem.
 
 The name is a variant of Salvador Dali for his famous painting [The Persistence of Memory](http://en.wikipedia.org/wiki/The_Persistence_of_Memory).
