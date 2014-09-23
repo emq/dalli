@@ -636,7 +636,314 @@ describe 'Dalli' do
   end
 
   describe 'using unix sockets' do
-    it "pass a simple smoke test" do
+    it "support get/set" do
+      memcached_persistent(:unix_socket) do |dc|
+        dc.flush
+
+        val1 = "1234567890"*105000
+        assert_equal false, dc.set('a', val1)
+
+        val1 = "1234567890"*100000
+        dc.set('a', val1)
+        val2 = dc.get('a')
+        assert_equal val1, val2
+
+        assert op_addset_succeeds(dc.set('a', nil))
+        assert_nil dc.get('a')
+      end
+    end
+
+    it 'supports delete' do
+      memcached_persistent(:unix_socket) do |dc|
+        dc.set('some_key', 'some_value')
+        assert_equal 'some_value', dc.get('some_key')
+
+        dc.delete('some_key')
+        assert_nil dc.get('some_key')
+      end
+    end
+
+    it 'returns nil for nonexist key' do
+      memcached_persistent(:unix_socket) do |dc|
+        assert_equal nil, dc.get('notexist')
+      end
+    end
+
+    it 'allows "Not found" as value' do
+      memcached_persistent(:unix_socket) do |dc|
+        dc.set('key1', 'Not found')
+        assert_equal 'Not found', dc.get('key1')
+      end
+    end
+
+    it "support stats" do
+      memcached_persistent(:unix_socket) do |dc|
+        # make sure that get_hits would not equal 0
+        dc.set(:a, "1234567890"*100000)
+        dc.get(:a)
+
+        stats = dc.stats
+        servers = stats.keys
+        assert(servers.any? do |s|
+          stats[s]["get_hits"].to_i != 0
+        end, "general stats failed")
+
+        stats_items = dc.stats(:items)
+        servers = stats_items.keys
+        assert(servers.all? do |s|
+          stats_items[s].keys.any? do |key|
+            key =~ /items:[0-9]+:number/
+          end
+        end, "stats items failed")
+
+        stats_slabs = dc.stats(:slabs)
+        servers = stats_slabs.keys
+        assert(servers.all? do |s|
+          stats_slabs[s].keys.any? do |key|
+            key == "active_slabs"
+          end
+        end, "stats slabs failed")
+
+        # reset_stats test
+        results = dc.reset_stats
+        assert(results.all? { |x| x })
+        stats = dc.stats
+        servers = stats.keys
+
+        # check if reset was performed
+        servers.each do |s|
+          assert_equal 0, dc.stats[s]["get_hits"].to_i
+        end
+      end
+    end
+
+    it "support the fetch operation" do
+      memcached_persistent(:unix_socket) do |dc|
+        dc.flush
+
+        expected = { 'blah' => 'blerg!' }
+        executed = false
+        value = dc.fetch('fetch_key') do
+          executed = true
+          expected
+        end
+        assert_equal expected, value
+        assert_equal true, executed
+
+        executed = false
+        value = dc.fetch('fetch_key') do
+          executed = true
+          expected
+        end
+        assert_equal expected, value
+        assert_equal false, executed
+      end
+    end
+
+    it "support the fetch operation with falsey values" do
+      memcached_persistent(:unix_socket) do |dc|
+        dc.flush
+
+        dc.set("fetch_key", false)
+        res = dc.fetch("fetch_key") { flunk "fetch block called" }
+        assert_equal false, res
+
+        dc.set("fetch_key", nil)
+        res = dc.fetch("fetch_key") { "bob" }
+        assert_equal 'bob', res
+      end
+    end
+
+    it "support the cas operation" do
+      memcached_persistent(:unix_socket) do |dc|
+        dc.flush
+
+        expected = { 'blah' => 'blerg!' }
+
+        resp = dc.cas('cas_key') do |value|
+          fail('Value it not exist')
+        end
+        assert_nil resp
+
+        mutated = { 'blah' => 'foo!' }
+        dc.set('cas_key', expected)
+        resp = dc.cas('cas_key') do |value|
+          assert_equal expected, value
+          mutated
+        end
+        assert op_cas_succeeds(resp)
+
+        resp = dc.get('cas_key')
+        assert_equal mutated, resp
+      end
+    end
+
+    it "support multi-get" do
+      memcached_persistent(:unix_socket) do |dc|
+        dc.close
+        dc.flush
+        resp = dc.get_multi(%w(a b c d e f))
+        assert_equal({}, resp)
+
+        dc.set('a', 'foo')
+        dc.set('b', 123)
+        dc.set('c', %w(a b c))
+        # Invocation without block
+        resp = dc.get_multi(%w(a b c d e f))
+        expected_resp = { 'a' => 'foo', 'b' => 123, 'c' => %w(a b c) }
+        assert_equal(expected_resp, resp)
+
+        # Invocation with block
+        dc.get_multi(%w(a b c d e f)) do |k, v|
+          assert(expected_resp.has_key?(k) && expected_resp[k] == v)
+          expected_resp.delete(k)
+        end
+        assert expected_resp.empty?
+
+        # Perform a big multi-get with 1000 elements.
+        arr = []
+        dc.multi do
+          1000.times do |idx|
+            dc.set idx, idx
+            arr << idx
+          end
+        end
+
+        result = dc.get_multi(arr)
+        assert_equal(1000, result.size)
+        assert_equal(50, result['50'])
+      end
+    end
+
+    it 'support raw incr/decr' do
+      memcached_persistent(:unix_socket) do |client|
+        client.flush
+
+        assert op_addset_succeeds(client.set('fakecounter', 0, 0, :raw => true))
+        assert_equal 1, client.incr('fakecounter', 1)
+        assert_equal 2, client.incr('fakecounter', 1)
+        assert_equal 3, client.incr('fakecounter', 1)
+        assert_equal 1, client.decr('fakecounter', 2)
+        assert_equal "1", client.get('fakecounter', :raw => true)
+
+        resp = client.incr('mycounter', 0)
+        assert_nil resp
+
+        resp = client.incr('mycounter', 1, 0, 2)
+        assert_equal 2, resp
+        resp = client.incr('mycounter', 1)
+        assert_equal 3, resp
+
+        resp = client.set('rawcounter', 10, 0, :raw => true)
+        assert op_cas_succeeds(resp)
+
+        resp = client.get('rawcounter', :raw => true)
+        assert_equal '10', resp
+
+        resp = client.incr('rawcounter', 1)
+        assert_equal 11, resp
+      end
+    end
+
+    it "support incr/decr operations" do
+      memcached_persistent(:unix_socket) do |dc|
+        dc.flush
+
+        resp = dc.decr('counter', 100, 5, 0)
+        assert_equal 0, resp
+
+        resp = dc.decr('counter', 10)
+        assert_equal 0, resp
+
+        resp = dc.incr('counter', 10)
+        assert_equal 10, resp
+
+        current = 10
+        100.times do |x|
+          resp = dc.incr('counter', 10)
+          assert_equal current + ((x+1)*10), resp
+        end
+
+        resp = dc.decr('10billion', 0, 5, 10)
+        # go over the 32-bit mark to verify proper (un)packing
+        resp = dc.incr('10billion', 10_000_000_000)
+        assert_equal 10_000_000_010, resp
+
+        resp = dc.decr('10billion', 1)
+        assert_equal 10_000_000_009, resp
+
+        resp = dc.decr('10billion', 0)
+        assert_equal 10_000_000_009, resp
+
+        resp = dc.incr('10billion', 0)
+        assert_equal 10_000_000_009, resp
+
+        assert_nil dc.incr('DNE', 10)
+        assert_nil dc.decr('DNE', 10)
+
+        resp = dc.incr('big', 100, 5, 0xFFFFFFFFFFFFFFFE)
+        assert_equal 0xFFFFFFFFFFFFFFFE, resp
+        resp = dc.incr('big', 1)
+        assert_equal 0xFFFFFFFFFFFFFFFF, resp
+
+        # rollover the 64-bit value, we'll get something undefined.
+        resp = dc.incr('big', 1)
+        refute_equal 0x10000000000000000, resp
+        dc.reset
+      end
+    end
+
+    it 'support the append and prepend operations' do
+      memcached_persistent(:unix_socket) do |dc|
+        dc.flush
+        assert op_addset_succeeds(dc.set('456', 'xyz', 0, :raw => true))
+        assert_equal true, dc.prepend('456', '0')
+        assert_equal true, dc.append('456', '9')
+        assert_equal '0xyz9', dc.get('456', :raw => true)
+        assert_equal '0xyz9', dc.get('456')
+
+        assert_equal false, dc.append('nonexist', 'abc')
+        assert_equal false, dc.prepend('nonexist', 'abc')
+      end
+    end
+
+    it 'supports replace operation' do
+      memcached_persistent(:unix_socket) do |dc|
+        dc.flush
+        dc.set('key', 'value')
+        assert op_replace_succeeds(dc.replace('key', 'value2'))
+
+        assert_equal 'value2', dc.get('key')
+      end
+    end
+
+    it 'support touch operation' do
+      memcached_persistent(:unix_socket) do |dc|
+        begin
+          dc.flush
+          dc.set 'key', 'value'
+          assert_equal true, dc.touch('key', 10)
+          assert_equal true, dc.touch('key')
+          assert_equal 'value', dc.get('key')
+          assert_nil dc.touch('notexist')
+        rescue Dalli::DalliError => e
+          # This will happen when memcached is in lesser version than 1.4.8
+          assert_equal 'Response error 129: Unknown command', e.message
+        end
+      end
+    end
+
+    it 'support version operation' do
+      memcached_persistent(:unix_socket) do |dc|
+        v = dc.version
+        servers = v.keys
+        assert(servers.any? do |s|
+          v[s] != nil
+        end, "version failed")
+      end
+    end
+
+    it 'pass a simple smoke test' do
       memcached_persistent(:unix_socket) do |dc, port|
         resp = dc.flush
         refute_nil resp
@@ -687,6 +994,38 @@ describe 'Dalli' do
         assert_equal Hash, resp.class
 
         dc.close
+      end
+    end
+
+
+    it "handle application marshalling issues" do
+      memcached_persistent(:unix_socket) do |dc|
+        old = Dalli.logger
+        Dalli.logger = Logger.new(nil)
+        begin
+          assert_equal false, dc.set('a', Proc.new { true })
+        ensure
+          Dalli.logger = old
+        end
+      end
+    end
+
+    describe 'in low memory conditions' do
+      it 'handle error response correctly' do
+        memcached_low_mem_persistent(:unix_socket) do |dc|
+          failed = false
+          value = "1234567890"*100
+          1_000.times do |idx|
+            begin
+              assert op_addset_succeeds(dc.set(idx, value))
+            rescue Dalli::DalliError
+              failed = true
+              assert((800..960).include?(idx), "unexpected failure on iteration #{idx}")
+              break
+            end
+          end
+          assert failed, 'did not fail under low memory conditions'
+        end
       end
     end
   end
