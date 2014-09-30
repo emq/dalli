@@ -1,7 +1,14 @@
-Dalli [![Build Status](https://secure.travis-ci.org/mperham/dalli.png)](http://travis-ci.org/mperham/dalli) [![Dependency Status](https://gemnasium.com/mperham/dalli.png)](https://gemnasium.com/mperham/dalli) [![Code Climate](https://codeclimate.com/github/mperham/dalli.png)](https://codeclimate.com/github/mperham/dalli)
-=====
 
-**Fork that brings back UNIX socket support, work in progress**
+# Dalli (fork)
+[![Build Status](https://secure.travis-ci.org/emq/dalli.png)](http://travis-ci.org/emq/dalli)
+[![Code Climate](https://codeclimate.com/github/emq/dalli.png)](https://codeclimate.com/github/emq/dalli)
+
+
+**Fork that brings back UNIX socket support, (ongoing) work in progress**
+
+Is is already being used in production enviroment? **Yes**
+
+Will this fork be maintained? **Probably yes**
 
 Benchmarks:
 
