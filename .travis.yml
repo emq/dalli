@@ -11,6 +11,7 @@ gemfile:
 matrix:
   allow_failures:
     - rvm: rbx-2
+    - rvm: jruby
 env: JRUBY_OPTS='--1.9'
 before_install:
   - sudo apt-get -y remove memcached
